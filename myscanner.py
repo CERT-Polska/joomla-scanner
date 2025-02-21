@@ -1,10 +1,14 @@
-import http.client
-from urllib.parse import urlparse
-import requests
 import argparse
 import sys
 import re
-import os
+import json
+
+from urllib.parse import urlparse
+import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # os.environ['NO_PROXY'] = '127.0.0.1'
 proxies = {
@@ -32,8 +36,55 @@ core_components = {
     "com_templates", "com_users", "com_workflow", "com_wrapper"
 }
 
+core_modules = {
+    "mod_languages", "mod_menu"
+}
+
 
 timeoutconnection = 15
+
+def print_scanner_results_with_extensions(scanner_output, extensions_file):
+    # Load extensions.json
+    with open(extensions_file, 'r') as f:
+        extensions = json.load(f)
+
+    # Print components
+    if 'components' in scanner_output:
+        print("components:")
+        for component_key, component_entries in scanner_output['components'].items():
+            if component_entries:
+                print(f"{component_key} - {component_entries[0]['name']} - {component_entries[0]['version']}")
+                # Match with extensions.json
+                for ext in extensions:
+                    try:
+                        ext_name = ext['extension_name']
+                        if ext_name == 'Saint Of The Day!':
+                            continue
+                        ext_version = ext['other']['ext_page_data']['data']['Version']
+                        if ext_name.lower() == component_entries[0]['name'].lower() or component_key.lower() in ext_name.lower():
+                            print(f"- {ext_name} - {ext_version}")
+                    except KeyError:
+                        print(f"Error: {ext['extension_name']} does not have version in extensions.json")
+
+    # Print modules
+    if 'modules' in scanner_output:
+        print("\nmodules:")
+        for module_key, module_entries in scanner_output['modules'].items():
+            if module_entries:
+                print(f"{module_key} - {module_entries[0]['name']} - {module_entries[0]['version']}")
+                # Match with extensions.json
+                for ext in extensions:
+                    try:
+                        ext_name = ext['extension_name']
+                        if ext_name == 'Saint Of The Day!':
+                            continue
+                        ext_version = ext['other']['ext_page_data']['data']['Version']
+                        if ext_name.lower() == module_entries[0]['name'].lower() or module_key[4:].lower() in ext_name.lower():
+                            print(f"- {ext_name} - {ext_version}")
+                    except KeyError:
+                        print(f"Error: {ext['extension_name']} does not have version in extensions.json")
+
+
 
 def blob_ext_identification(site_blob):
     index_components = re.findall(r'com_\w+', site_blob)
@@ -43,7 +94,7 @@ def blob_ext_identification(site_blob):
     index_templates = re.findall(r"/templates/([\w-]+)", site_blob)
 
     index_components = list(set(index_components) - core_components)
-    index_modules = list(set(index_modules))
+    index_modules = list(set(index_modules) - core_modules)
     index_plugins = list(set(index_plugins))
     index_packages = list(set(index_packages))
     index_templates = list(set(index_templates))
@@ -51,7 +102,7 @@ def blob_ext_identification(site_blob):
     return index_components, index_modules, index_packages, index_plugins, index_templates
 
 
-# def identify_ext_version():
+
 
 
 # com_name contains "com_" prefix
@@ -60,20 +111,22 @@ def check_for_component(url, com_name):
     ## for now it is list because of multiple URL types for same module
     final_out = []
 
-    type_1 = "/administrator/components/" + com_name + "/manifest.xml"
-    type_2 = "/administrator/components/" + com_name + "/" + com_name[4:] + ".xml"
-    type_3 = "/administrator/components/" + com_name + "/" + com_name + ".xml"
+    paths = [
+        "/administrator/components/" + com_name + "/manifest.xml",
+        "/administrator/components/" + com_name + "/" + com_name[4:] + ".xml",
+        "/administrator/components/" + com_name + "/" + com_name + ".xml"
+    ]
 
-    for path in [type_1, type_2, type_3]:
-        
+    for path in paths:
+
         try:
-            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies)
+            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
 
-            ## Is verifying 200 and content type sufficient ? 
+            ## Is verifying 200 and content type sufficient ?
             if conn.status_code == 200:
                 if "xml" in conn.headers.get("Content-Type", "").lower():
 
-                    ## There are multiple lines with version in the .xml files.. 
+                    ## There are multiple lines with version in the .xml files..
                     ## Some extensions have multuple plg,com,mod with different versions
                     versions = re.findall(r"<version[^>]*>(.*?)</version>", conn.text, re.DOTALL)
                     names = re.findall(r"<name[^>]*>(.*?)</name>", conn.text, re.DOTALL)
@@ -88,7 +141,7 @@ def check_for_component(url, com_name):
                         out["note"] += f"[Name:There are multiple versions in xml identified:({versions})]"
 
                     final_out.append(out)
-                    
+
         except Exception as e:
             print(f"Error during retrieving the component xml sites |{url}|{path}|")
             print("Error:" + str(e))
@@ -96,29 +149,27 @@ def check_for_component(url, com_name):
     if len(final_out) == 0:
         return None
     return final_out
-                
-
-
-        
 
 # mod_name contains "mod_" prefix
 def check_for_module(url, mod_name):
 
     ## for now it is list because of multiple URL types for same module
     final_out = []
-    
-    type_1 = "/modules/" + mod_name + "/" + mod_name + ".xml"
-    type_2 = "/administrator/modules/" + mod_name + "/" + mod_name + ".xml"
 
-    for path in [type_1, type_2]:
+    paths = [
+        "/modules/" + mod_name + "/" + mod_name + ".xml",
+        "/administrator/modules/" + mod_name + "/" + mod_name + ".xml"
+    ]
+
+    for path in paths:
         try:
-            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies)
+            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
 
-            ## Is verifying 200 and content type sufficient ? 
+            ## Is verifying 200 and content type sufficient ?
             if conn.status_code == 200:
                 if "xml" in conn.headers.get("Content-Type", "").lower():
 
-                    ## There are multiple lines with version in the .xml files.. 
+                    ## There are multiple lines with version in the .xml files..
                     ## Some extensions have multuple plg,com,mod with different versions
                     versions = re.findall(r"<version[^>]*>(.*?)</version>", conn.text, re.DOTALL)
                     names = re.findall(r"<name[^>]*>(.*?)</name>", conn.text, re.DOTALL)
@@ -138,7 +189,7 @@ def check_for_module(url, mod_name):
         except Exception as e:
             print(f"Error during retrieving the module xml sites |{url}|{path}|")
             print("Error:" + str(e))
-    
+
     if len(final_out) == 0:
         return None
     return final_out
@@ -151,7 +202,7 @@ def check_for_plugin(plg_name):
 
 
 def process_redirs(conn):
-    
+
     redir_urls = []
     final_urls = []
 
@@ -160,15 +211,14 @@ def process_redirs(conn):
     if conn.history:
         for resp in conn.history:
             if resp.url[-1:] == "/":
-                redir_urls.append(resp.url[:-1]) 
+                redir_urls.append(resp.url[:-1])
             else:
                 redir_urls.append(resp.url)
 
     if conn.url[-1:] == '/':
-        redir_urls.append(conn.url[:-1]) 
+        redir_urls.append(conn.url[:-1])
     else:
-        redir_urls.append(conn.url) 
-    
+        redir_urls.append(conn.url)
 
     ## the protocol and domain is stripped from redirects - https://domain.com/en/shop/{module} dont work but https://domain.com/{module} does
     for url in redir_urls:
@@ -183,8 +233,7 @@ def process_redirs(conn):
         except Exception as e:
             print(f"Error parsing URL: {e}")
 
-    return list(set(final_urls)) 
-    
+    return list(set(final_urls))
 
 def check_index(url):
     scanner_output = {
@@ -195,10 +244,10 @@ def check_index(url):
         # "libraries": []
         # "plugins": []
         # "templates": []
-        
+
     }
     try:
-        conn = requests.get(url, headers=custom_headers, timeout=timeoutconnection, proxies=proxies)
+        conn = requests.get(url, headers=custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
         final_urls = process_redirs(conn)
 
         print(f"{len(final_urls)} urls found:\n{final_urls}")
@@ -222,7 +271,6 @@ def check_index(url):
                         tmp_out = check_for_module(val, uniq_mod)
                         if tmp_out:
                             scanner_output['modules'][uniq_mod].extend(tmp_out)
-                
 
             # print("Found com_* patterns: ", index_components)
             # print("Found mod_* patterns: ", index_modules)
@@ -240,8 +288,16 @@ def check_index(url):
 
     print(scanner_output)
 
+
+    print_scanner_results_with_extensions(scanner_output, "extensions.json")
+
+
+def extension_enum(url):
+    pass
+
+
 def main(argv):
-    
+
     # Arguments parsing
     try:
         parser = argparse.ArgumentParser()
@@ -269,5 +325,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-
-
