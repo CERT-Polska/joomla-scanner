@@ -4,6 +4,7 @@ import re
 import json
 
 from urllib.parse import urlparse
+from packaging import version
 import requests
 import urllib3
 
@@ -12,13 +13,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # os.environ['NO_PROXY'] = '127.0.0.1'
 proxies = {
-# write your proxy here
 }
 
 
-url = ""
 custom_headers = {
-    "User-Agent": "Mozilla/5.0 (iPad; CPU OS 8_1_3 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Version/8.0 Mobile/12B466 Safari/600.1.4",
     "Accept-Encoding": "identity",
     "Connection": "Keep-Alive",
     "Accept": "*/*"
@@ -50,48 +48,103 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
 
     # Print components
     if 'components' in scanner_output:
-        print("components:")
-        for component_key, component_entries in scanner_output['components'].items():
+        for component_key, component_entries in scanner_output['components'].items():         
             if component_entries:
-                print(f"{component_key} - {component_entries[0]['name']} - {component_entries[0]['version']}")
-                # Match with extensions.json
+                site_component_name = component_entries[0]['name']
+                site_component_urls = component_entries[0]['urls']
+                site_component_version = component_entries[0]['version']                
+
                 for ext in extensions:
                     try:
                         ext_name = ext['extension_name']
-                        if ext_name == 'Saint Of The Day!':
+                        if ext_name == 'Saint Of The Day!':  # broken extension
                             continue
                         ext_version = ext['other']['ext_page_data']['data']['Version']
-                        if ext_name.lower() == component_entries[0]['name'].lower() or component_key.lower() in ext_name.lower():
-                            print(f"- {ext_name} - {ext_version}")
+                        ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
+                        if ext_name.lower() == component_entries[0]['name'].lower() or component_key[4:].lower() in ext_name.lower():
+                            # print(site_component_name)
+                            # print(ext_name)
+                            if version.parse(site_component_version) < version.parse(ext_version):
+                                output = {}
+                                data = {}
+                                data['identified_version'] = site_component_version
+                                data['matched_extension_name'] = ext_name
+                                data['matched_extension_version'] = ext_version
+                                data['matched_extension_last_update'] = ext_update
+                                data['matched_by'] = component_key
+                                data['urls'] = site_component_urls
+
+                                output[site_component_name] = data
+                                print(output)
+
                     except KeyError:
                         print(f"Error: {ext['extension_name']} does not have version in extensions.json")
 
     # Print modules
     if 'modules' in scanner_output:
-        print("\nmodules:")
         for module_key, module_entries in scanner_output['modules'].items():
             if module_entries:
-                print(f"{module_key} - {module_entries[0]['name']} - {module_entries[0]['version']}")
-                # Match with extensions.json
+                site_module_name = module_entries[0]['name']
+                site_module_urls = module_entries[0]['urls']
+                site_module_version = module_entries[0]['version']
+
+                
                 for ext in extensions:
                     try:
                         ext_name = ext['extension_name']
-                        if ext_name == 'Saint Of The Day!':
+                        if ext_name == 'Saint Of The Day!':  # broken extension
                             continue
                         ext_version = ext['other']['ext_page_data']['data']['Version']
+                        ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
                         if ext_name.lower() == module_entries[0]['name'].lower() or module_key[4:].lower() in ext_name.lower():
-                            print(f"- {ext_name} - {ext_version}")
+                            if version.parse(site_module_version) < version.parse(ext_version):
+
+                                output = {}
+                                data = {}
+                                data['identified_version'] = site_module_version
+                                data['matched_extension_name'] = ext_name
+                                data['matched_extension_version'] = ext_version
+                                data['matched_extension_last_update'] = ext_update
+                                data['matched_by'] = module_key
+                                data['urls'] = site_module_urls
+
+                                output[site_module_name] = data
+                                print(output)
                     except KeyError:
                         print(f"Error: {ext['extension_name']} does not have version in extensions.json")
 
+    if 'plugins' in scanner_output:
+        pass
 
 
-def blob_ext_identification(site_blob):
-    index_components = re.findall(r'com_\w+', site_blob)
-    index_modules = re.findall(r'mod_\w+', site_blob)
-    index_plugins = re.findall(r'plg_\w+', site_blob)
-    index_packages = re.findall(r'pkg_\w+', site_blob)
-    index_templates = re.findall(r"/templates/([\w-]+)", site_blob)
+def blob_ext_identification(conn, final_urls, user_agent):
+
+    if conn.request.url[-1] == '/':
+        main_url = conn.request.url[:-1]
+    else:
+        main_url = conn.request.url
+
+    redirects_list = [item for item in final_urls if item != main_url]
+    site_blobs = [conn.text]
+
+    for url in redirects_list:
+        request_headers = {**custom_headers, "User-Agent": user_agent}
+        conn = requests.get(url, headers=request_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
+        site_blobs.append(conn.text)
+
+    index_components = []
+    index_modules = []
+    index_plugins = []
+    index_packages = []
+    index_templates = []
+
+    for blob in site_blobs:
+        index_components.extend(re.findall(r'com_\w+', blob))
+        index_modules.extend(re.findall(r'mod_\w+', blob))
+        index_plugins.extend(re.findall(r'plg_\w+|\w+_plg+', blob))
+        index_packages.extend(re.findall(r'pkg_\w+|\w+_pkg', blob))
+        index_templates.extend(re.findall(r"/templates/([\w-]+)", blob))
+
 
     index_components = list(set(index_components) - core_components)
     index_modules = list(set(index_modules) - core_modules)
@@ -102,11 +155,8 @@ def blob_ext_identification(site_blob):
     return index_components, index_modules, index_packages, index_plugins, index_templates
 
 
-
-
-
 # com_name contains "com_" prefix
-def check_for_component(url, com_name):
+def check_for_component(url, com_name, user_agent):
 
     ## for now it is list because of multiple URL types for same module
     final_out = []
@@ -120,7 +170,8 @@ def check_for_component(url, com_name):
     for path in paths:
 
         try:
-            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
+            request_headers = {**custom_headers, "User-Agent": user_agent}
+            conn = requests.get(url + path, headers = request_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
 
             ## Is verifying 200 and content type sufficient ?
             if conn.status_code == 200:
@@ -151,7 +202,7 @@ def check_for_component(url, com_name):
     return final_out
 
 # mod_name contains "mod_" prefix
-def check_for_module(url, mod_name):
+def check_for_module(url, mod_name, user_agent):
 
     ## for now it is list because of multiple URL types for same module
     final_out = []
@@ -163,7 +214,8 @@ def check_for_module(url, mod_name):
 
     for path in paths:
         try:
-            conn = requests.get(url + path, headers = custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
+            request_headers = {**custom_headers, "User-Agent": user_agent}
+            conn = requests.get(url + path, headers = request_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
 
             ## Is verifying 200 and content type sufficient ?
             if conn.status_code == 200:
@@ -195,9 +247,52 @@ def check_for_module(url, mod_name):
     return final_out
 
 # plg_name NOT conains "plg_" prefix
-def check_for_plugin(plg_name):
-    type_1 = "/plugins/system/" + plg_name + "/" + plg_name + ".xml"
-    type_2 = "/plugins/.*/" + plg_name + "/" + plg_name + ".xml"              # TODO: the .* words needs to be identified and statically placed here
+def check_for_plugin(url, plg_name, user_agent):
+
+    final_out = []
+
+    plugin_keywords = ['actionlog', 'acymailing', 'adsmanagercontent', 'ajax', 'authentication', 'blc', 'captcha', 'console', 'content', 'editors', 'editors-xtd', 'eventgallery_pay', 'eventgallery_ship', 'eventgallery_sur', 'extension', 'fields', 'finder', 'hotspots', 'hotspotslinks', 'installer', 'j2store', 'jem', 'jlsitemap', 'jshopping', 'jshoppingcheckout', 'jshoppingorder', 'jshoppingproducts', 'k2', 'osmap', 'pagebuilderck', 'privacy', 'quickicon', 'schuweb_sitemap', 'search', 'slogin_auth', 'slogin_integration', 'solidres', 'solidrespayment', 'system', 'task', 'user', 'vmpayment', 'webservices', 'xmap']
+
+    prefix_url = "/plugins/"
+    suffix_url = "/" + plg_name + "/" + plg_name + ".xml"  
+
+
+    for keyword in plugin_keywords:
+        try:
+            path = prefix_url + keyword + suffix_url
+            request_headers = {**custom_headers, "User-Agent": user_agent}
+            conn = requests.get(url + path, headers = request_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
+    
+            
+
+            ## Is verifying 200 and content type sufficient ?
+            if conn.status_code == 200:
+                if "xml" in conn.headers.get("Content-Type", "").lower():
+
+                    ## There are multiple lines with version in the .xml files..
+                    ## Some extensions have multuple plg,com,mod with different versions
+                    versions = re.findall(r"<version[^>]*>(.*?)</version>", conn.text, re.DOTALL)
+                    names = re.findall(r"<name[^>]*>(.*?)</name>", conn.text, re.DOTALL)
+
+                    out = {}
+
+                    out["url"] = url + path
+                    out["name"] = names[0]
+                    out["version"] = versions[0]
+                    if len(names) > 1:
+                        out["note"] += f"[Name:There are multiple names identified:({names})]"
+                    if len(versions) > 1:
+                        out["note"] += f"[Name:There are multiple versions in xml identified:({versions})]"
+
+                    final_out.append(out)
+
+        except Exception as e:
+            print(f"Error during retrieving the module xml sites |{url}|{path}|")
+            print("Error:" + str(e))
+
+    if len(final_out) == 0:
+        return None
+    return final_out 
 
 
 
@@ -235,48 +330,123 @@ def process_redirs(conn):
 
     return list(set(final_urls))
 
-def check_index(url):
+def check_index(url, user_agent):
+
     scanner_output = {
         "redirect_urls": [],
         "components": {},
-        "modules": {}
+        "modules": {},
         # "packages": []
         # "libraries": []
-        # "plugins": []
+        "plugins": {}
         # "templates": []
 
     }
     try:
-        conn = requests.get(url, headers=custom_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
+        request_headers = {**custom_headers, "User-Agent": user_agent}
+        conn = requests.get(url, headers=request_headers, timeout=timeoutconnection, proxies=proxies, verify=False)
         final_urls = process_redirs(conn)
 
         print(f"{len(final_urls)} urls found:\n{final_urls}")
         scanner_output['redirect_urls'] = final_urls
 
         if conn.status_code == 200:
-            index_components, index_modules, index_packages, index_plugins, index_templates = blob_ext_identification(conn.text)
+            index_components, index_modules, index_packages, index_plugins, index_templates = blob_ext_identification(conn, final_urls, user_agent)
 
-            if len(index_components) > 0:
-                for uniq_com in index_components:
-                    scanner_output["components"][uniq_com] = []
-                    for val in final_urls:
-                        tmp_out = check_for_component(val, uniq_com)
-                        if tmp_out:
-                            scanner_output['components'][uniq_com].extend(tmp_out)
+            # print(index_components)
+            # print(index_modules)
+            # print(index_packages)
+            # print(index_plugins)
+            # print(index_templates)
 
-            if len(index_modules) > 0:
-                for uniq_mod in index_modules:
+            if len(index_modules) > 0:                     
+                for uniq_mod in index_modules:              
                     scanner_output["modules"][uniq_mod] = []
                     for val in final_urls:
-                        tmp_out = check_for_module(val, uniq_mod)
+                        tmp_out = check_for_module(val, uniq_mod, user_agent)
                         if tmp_out:
-                            scanner_output['modules'][uniq_mod].extend(tmp_out)
+                            mod_name = tmp_out[0]['name']
+                            mod_version = tmp_out[0]['version']
+                            mod_url = tmp_out[0]['url']
 
-            # print("Found com_* patterns: ", index_components)
-            # print("Found mod_* patterns: ", index_modules)
-            # print("Found plugins: ", index_plugins)
-            # print("Found pkg_* patterns: ", index_packages)
-            # print("Found templates: ", index_templates)
+                            # Check if the same module (name + version) already exists
+                            existing_entry = next(
+                                (entry for entry in scanner_output["modules"][uniq_mod] 
+                                if entry["name"] == mod_name and entry["version"] == mod_version), 
+                                None
+                            )
+
+                            if existing_entry:
+                                # If name & version match, just add the URL
+                                if mod_url not in existing_entry['urls']:
+                                    existing_entry['urls'].append(mod_url)
+                            else:
+                                # If name or version is different, create a new entry
+                                scanner_output["modules"][uniq_mod].append({
+                                    'name': mod_name,
+                                    'version': mod_version,
+                                    'urls': [mod_url]  # Store initial URL
+                                })
+
+            if len(index_components) > 0:
+                for uniq_comp in index_components:
+                    scanner_output["components"][uniq_comp] = []
+                    for val in final_urls:
+                        tmp_out = check_for_component(val, uniq_comp, user_agent)
+                        if tmp_out:
+                            comp_name = tmp_out[0]['name']
+                            comp_version = tmp_out[0]['version']
+                            comp_url = tmp_out[0]['url']
+
+                            # Check if the same component (name + version) already exists
+                            existing_entry = next(
+                                (entry for entry in scanner_output["components"][uniq_comp]
+                                if entry["name"] == comp_name and entry["version"] == comp_version),
+                                None
+                            )
+
+                            if existing_entry:
+                                # If name & version match, just add the URL
+                                if comp_url not in existing_entry['urls']:
+                                    existing_entry['urls'].append(comp_url)
+                            else:
+                                # If name or version is different, create a new entry
+                                scanner_output["components"][uniq_comp].append({
+                                    'name': comp_name,
+                                    'version': comp_version,
+                                    'urls': [comp_url]  # Store initial URL
+                                })
+
+
+
+            # if len(index_plugins) > 0:
+            #     for uniq_plugin in index_plugins:
+            #         scanner_output["plugins"][uniq_plugin] = []
+            #         for val in final_urls:
+            #             tmp_out = check_for_plugin(val, uniq_plugin, user_agent)
+            #             if tmp_out:
+            #                 plugin_name = tmp_out[0]['name']
+            #                 plugin_version = tmp_out[0]['version']
+            #                 plugin_url = tmp_out[0]['url']
+
+            #                 # Check if the same plugin (name + version) already exists
+            #                 existing_entry = next(
+            #                     (entry for entry in scanner_output["plugins"][uniq_plugin]
+            #                     if entry["name"] == plugin_name and entry["version"] == plugin_version),
+            #                     None
+            #                 )
+
+            #                 if existing_entry:
+            #                     # If name & version match, just add the URL
+            #                     if plugin_url not in existing_entry['urls']:
+            #                         existing_entry['urls'].append(plugin_url)
+            #                 else:
+            #                     # If name or version is different, create a new entry
+            #                     scanner_output["plugins"][uniq_plugin].append({
+            #                         'name': plugin_name,
+            #                         'version': plugin_version,
+            #                         'urls': [plugin_url]  # Store initial URL
+            #                     })
 
         else:
             print("There was problem retriewing the index page")
@@ -286,42 +456,83 @@ def check_index(url):
         print(e)
         return None
 
-    print(scanner_output)
+    # print(scanner_output)
 
 
     print_scanner_results_with_extensions(scanner_output, "extensions.json")
 
 
-def extension_enum(url):
-    pass
+def extension_enum(url, user_agent, rate_limit):
+    with open('extensions-files.json', 'r', encoding='utf-8') as f:
+        extensions = json.load(f)
+
+    # Initialize counters
+    total_com_files = 0
+    total_mod_files = 0
+    total_plugins = 0
+    total_packages = 0
+    total_libs = 0
+
+    # Iterate through each extension
+    for ext in extensions:
+        # Count all URLs in each category
+        total_com_files += sum(len(paths) for paths in ext.get("com_files", {}).values())
+        total_mod_files += sum(len(paths) for paths in ext.get("mod_files", {}).values())
+        total_plugins += sum(len(paths) for paths in ext.get("plugins", {}).values())
+        total_packages += sum(len(paths) for paths in ext.get("packages", {}).values())
+        total_libs += sum(len(paths) for paths in ext.get("lib", {}).values())
+        total_urls = total_com_files + total_mod_files + total_plugins + total_packages + total_libs
+
+    # Print the results
+    print("**Count of URLs in Each Category:**")
+    print(f"Components (com_files): {total_com_files}")
+    print(f"Modules (mod_files): {total_mod_files}")
+    print(f"Plugins: {total_plugins}")
+    print(f"Packages: {total_packages}")
+    print(f"Libraries (lib): {total_libs}")
+    print(f"Total number of URLs to try:{total_urls}")
 
 
 def main(argv):
-
     # Arguments parsing
     try:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("-u", "--url", action="store", dest="url", help="The Joomla URL/domain to scan.")
+        parser = argparse.ArgumentParser(description="Joomla Scanner - Scans Joomla sites for version identification.")
+
+        parser.add_argument("-u", "--url", action="store", dest="url", required=True,
+                            help="The Joomla URL/domain to scan. Example: https://example.com")
+
+        parser.add_argument("--user-agent", action="store", dest="user_agent", default = "Mozilla/5.0 (iPad; CPU OS 8_1_3 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Version/8.0 Mobile/12B466 Safari/600.1.4",
+                            help="Specify a custom User-Agent string")
+
+        parser.add_argument("--rate-limit", action="store", dest="rate_limit", type=int, default=0,
+                            help="Set the number of requests per second (default: 0, meaning no limit).")
+
+        parser.add_argument("--scan-type", action="store", dest="scan_type", choices=["light", "invasive"], default="light",
+                            help="Select scan type: 'light' (default) - Scans only the HTML blob and identifies versions by common URL patterns for subextension types. "
+                                 "'invasive' - Enumerates URLs for every extension from a list containing all Joomla versions.")
 
         arguments = parser.parse_args()
     except:
         sys.exit(1)
 
-    if arguments.url:
-        url = arguments.url
-        if url[:8] != "https://" and url[:7] != "http://":
-            print("Insert http:// or https:// prefix")
-            sys.exit(1)
-
-        # Remove last slash if present
-        if url[-1:] == "/":
-            url = url[:-1]
-    else:
-        print("")
-        parser.parse_args(["-h"])
+    # Validate URL
+    url = arguments.url
+    if not url.startswith(("http://", "https://")):
+        print("Insert http:// or https:// prefix")
         sys.exit(1)
 
-    check_index(url)
+    # Remove trailing slash if present
+    url = url.rstrip("/")
+
+    # Extract optional parameters
+    user_agent = arguments.user_agent
+    rate_limit = arguments.rate_limit
+    scan_type = arguments.scan_type
+
+    if scan_type == "light":
+        check_index(url, user_agent)
+    elif scan_type == "invasive":
+        extension_enum(url, user_agent, rate_limit)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
