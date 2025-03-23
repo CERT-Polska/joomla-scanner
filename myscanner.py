@@ -46,6 +46,9 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
     with open(extensions_file, 'r') as f:
         extensions = json.load(f)
 
+    with open("extensions-ignore.json", 'r') as f:
+        extensions_ignore = json.load(f)
+
     # Print components
     if 'components' in scanner_output:
         for component_key, component_entries in scanner_output['components'].items():         
@@ -57,8 +60,14 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                 for ext in extensions:
                     try:
                         ext_name = ext['extension_name']
+
                         if ext_name == 'Saint Of The Day!':  # broken extension
                             continue
+
+                        if component_key[4:] in extensions_ignore['components'].keys():
+                            if ext_name in extensions_ignore['components'][component_key[4:]]:
+                                continue
+
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
                         if ext_name.lower() == component_entries[0]['name'].lower() or component_key[4:].lower() in ext_name.lower():
@@ -92,8 +101,14 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                 for ext in extensions:
                     try:
                         ext_name = ext['extension_name']
+
                         if ext_name == 'Saint Of The Day!':  # broken extension
                             continue
+
+                        if module_key[4:] in extensions_ignore['modules'].keys():
+                            if ext_name in extensions_ignore['modules'][module_key[4:]]:
+                                continue
+
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
                         if ext_name.lower() == module_entries[0]['name'].lower() or module_key[4:].lower() in ext_name.lower():
