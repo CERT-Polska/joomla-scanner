@@ -61,12 +61,12 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                     try:
                         ext_name = ext['extension_name']
 
-                        if ext_name == 'Saint Of The Day!':  # broken extension
-                            continue
 
                         if component_key[4:] in extensions_ignore['components'].keys():
                             if ext_name in extensions_ignore['components'][component_key[4:]]:
                                 continue
+                        if ext_name in extensions_ignore['full-extensions']:
+                            continue
 
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
@@ -102,12 +102,11 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                     try:
                         ext_name = ext['extension_name']
 
-                        if ext_name == 'Saint Of The Day!':  # broken extension
-                            continue
-
                         if module_key[4:] in extensions_ignore['modules'].keys():
                             if ext_name in extensions_ignore['modules'][module_key[4:]]:
                                 continue
+                        if ext_name in extensions_ignore['full-extensions']:
+                            continue
 
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
