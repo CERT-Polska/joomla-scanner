@@ -55,12 +55,27 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
             if component_entries:
                 site_component_name = component_entries[0]['name']
                 site_component_urls = component_entries[0]['urls']
-                site_component_version = component_entries[0]['version']                
+                site_component_version = ''
+
+                raw_site_component_version = component_entries[0]['version']
+                if ' ' in raw_site_component_version:
+                    parts = raw_site_component_version.split()
+                    for part in parts:
+                        try:
+                            site_component_version = version.parse(part)
+                            break  # Exit loop once a valid version is found
+                        except version.InvalidVersion:
+                            continue
+                    else:
+                        # No valid version found
+                        raise ValueError(f"No valid version found in '{raw_site_component_version}'")
+                else:
+                    # No space: assume it's a clean version string
+                    site_component_version = version.parse(raw_site_component_version)            
 
                 for ext in extensions:
                     try:
                         ext_name = ext['extension_name']
-
 
                         if component_key[4:] in extensions_ignore['components'].keys():
                             if ext_name in extensions_ignore['components'][component_key[4:]]:
@@ -71,9 +86,7 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
                         if ext_name.lower() == component_entries[0]['name'].lower() or component_key[4:].lower() in ext_name.lower():
-                            # print(site_component_name)
-                            # print(ext_name)
-                            if version.parse(site_component_version) < version.parse(ext_version):
+                            if site_component_version < version.parse(ext_version):
                                 output = {}
                                 data = {}
                                 data['identified_version'] = site_component_version
@@ -95,8 +108,23 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
             if module_entries:
                 site_module_name = module_entries[0]['name']
                 site_module_urls = module_entries[0]['urls']
-                site_module_version = module_entries[0]['version']
+                site_module_version = ''
 
+                raw_site_module_version = module_entries[0]['version']
+                if ' ' in raw_site_module_version:
+                    parts = raw_site_module_version.split()
+                    for part in parts:
+                        try:
+                            site_module_version = version.parse(part)
+                            break  # Exit loop once a valid version is found
+                        except version.InvalidVersion:
+                            continue
+                    else:
+                        # No valid version found
+                        raise ValueError(f"No valid version found in '{raw_site_module_version}'")
+                else:
+                    # No space: assume it's a clean version string
+                    site_module_version = version.parse(raw_site_module_version)
                 
                 for ext in extensions:
                     try:
@@ -111,7 +139,7 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                         ext_version = ext['other']['ext_page_data']['data']['Version']
                         ext_update = " ".join(ext['other']['ext_page_data']['data']['Last updated'].split()[:3])
                         if ext_name.lower() == module_entries[0]['name'].lower() or module_key[4:].lower() in ext_name.lower():
-                            if version.parse(site_module_version) < version.parse(ext_version):
+                            if site_module_version < version.parse(ext_version):
 
                                 output = {}
                                 data = {}
