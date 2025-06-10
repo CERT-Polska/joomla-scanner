@@ -89,7 +89,7 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
                             if site_component_version < version.parse(ext_version):
                                 output = {}
                                 data = {}
-                                data['identified_version'] = site_component_version
+                                data['identified_version'] = str(site_component_version)
                                 data['matched_extension_name'] = ext_name
                                 data['matched_extension_version'] = ext_version
                                 data['matched_extension_last_update'] = ext_update
@@ -143,7 +143,7 @@ def print_scanner_results_with_extensions(scanner_output, extensions_file):
 
                                 output = {}
                                 data = {}
-                                data['identified_version'] = site_module_version
+                                data['identified_version'] = str(site_module_version)
                                 data['matched_extension_name'] = ext_name
                                 data['matched_extension_version'] = ext_version
                                 data['matched_extension_last_update'] = ext_update
